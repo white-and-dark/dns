@@ -1,2 +1,0 @@
-ddd.edu.cn 86400 IN MX mail.ddd.edu.cn
-aaa.edu.cn 86400 IN MX mail.aaa.edu.cn

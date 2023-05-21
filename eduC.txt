@@ -1,2 +1,0 @@
-yzy.edu.cn 86400 IN CNAME yzy.shiyan.dns
-wyx.edu.cn 86400 IN CNAME wyx.shiyan.dns
