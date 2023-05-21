@@ -1,0 +1,4210 @@
+client.c文件如下：
+#include<stdio.h>
+#include<sys/types.h>
+#include<string.h>
+#include<unistd.h>
+#include<netinet/in.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<stdint.h>
+
+#include "DNS.h"
+#define DNS_MAX_LENGTH 1023
+#define A 1
+#define MX 0x000F 
+#define CNAME 5
+#define IN 1
+void my_strcpy(dns_query *b, char *a);
+unsigned char* convertDomainName(char *name);
+unsigned int head2buf(char *o, dns_header *header);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int getHeader(char *q, dns_header * header); 
+unsigned int getQuery(char *q, dns_query *query);
+unsigned int getRRs(char *q, dns_rr *rRecord);
+
+
+
+
+
+int main()
+{
+
+
+	int clientfd=0;
+	clientfd=socket(AF_INET,SOCK_STREAM,0);
+	if(clientfd<0)
+	{
+		perror("socket failed");
+		return -1;
+	}
+	
+
+
+	int ret=0;
+	int addrlen=0;
+	struct sockaddr_in seraddr={0};
+	seraddr.sin_family=AF_INET;
+	seraddr.sin_port=htons(53);
+	seraddr.sin_addr.s_addr=inet_addr("127.0.0.2");
+	addrlen=sizeof(seraddr);
+	ret=connect(clientfd,(struct sockaddr *)&seraddr,addrlen);
+	if(ret<0)
+	{
+		perror("connect failed");
+		close(clientfd);
+		return -1;
+	}
+	printf("Connected with server successfully!\n");
+
+
+
+	
+		unsigned char queryInfo[127];
+		unsigned char qType[127];
+		unsigned char* convertQueryInfo; 
+		char bufOut[DNS_MAX_LENGTH]; memset(bufOut, 0, DNS_MAX_LENGTH);
+		char bufIn[DNS_MAX_LENGTH]; memset(bufIn, 0, DNS_MAX_LENGTH);
+		char *o = bufOut + 2; 
+		char *i = bufIn + 2; 
+		unsigned short qClass;
+		unsigned short offset = 0;
+		unsigned short *offsetptr; 
+		int rev=0; 
+	   while(1)
+        {
+        memset(bufOut, 0, DNS_MAX_LENGTH);
+        memset(bufIn, 0, DNS_MAX_LENGTH);
+		o = bufOut + 2; 
+		i = bufIn + 2; 
+        offset = 0;
+        rev=0; 
+        
+		dns_query *query = (dns_query *)malloc(sizeof(dns_query));initQuery(query);
+		dns_header *head = (dns_header *)malloc(sizeof(dns_header));initHead(head);
+		dns_rr *rRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(rRecord);
+		
+		dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(recvQuery);
+		dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));initHead(recvHead);
+		dns_rr *recvRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(recvRecord);
+		
+		dns_query *mxQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(mxQuery);
+		dns_header *mxHead = (dns_header *)malloc(sizeof(dns_header));initHead(mxHead);
+		dns_rr *mxRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(mxRecord);
+		do{
+			printf("Please input the domain name and query type:\n");
+			scanf("%s %s", queryInfo, qType);
+			fflush(stdin);
+		}while(!strcmp(qType, "A") && !strcmp(qType, "MX") && !strcmp(qType, "0")
+			&& !strcmp(qType, "CNAME"));
+		
+		printf("------------------QUERY------------------\n");
+		printf("The Query Domain Name is: %s\n", queryInfo);
+		printf("The Query Type is: %s\n", qType);
+		printf("Now Start the Query Process\n");
+		printf("-----------------------------------------\n");
+		head->id = htons(head->id = 1);
+		head->tag = htons(head->tag = 4);
+		head->queryNum = htons(head->queryNum = 1);
+		head->answerNum = 0;
+		head->authorNum = 0;
+		head->addNum = 0;
+		o += head2buf(o, head);
+		my_strcpy(query, queryInfo);
+		
+		
+		
+		if(!strcmp(qType, "A")) query->qtype = A_TYPE;
+		else if (!strcmp(qType, "MX")) query->qtype = MX_TYPE;
+		else if (!strcmp(qType, "CNAME")) query->qtype = CNAME_TYPE;
+		else if (!strcmp(qType, "0")) query->qtype = 0; 
+		
+		query->qclass = IN;
+		
+		o += query2buf(o,query); 
+		offset = o - bufOut - 2; 
+		offsetptr = &offset;
+		uint16_t temp = htons(offset); 
+		memcpy(bufOut, &temp, sizeof(short)); 
+		
+
+        if(query->qtype==0)   break;
+        
+		if(send(clientfd, bufOut, offset+2, 0)<0){
+       	  perror("send");
+          return 2;
+       }else{ 
+    	printf("Send Query to Local Server\n");
+    	} 
+
+    	
+	    memset(bufIn,0,sizeof(bufIn));
+      	rev=recv(clientfd,bufIn,sizeof(bufIn),0);
+	    
+     	
+        
+	    
+		
+		
+		
+     	
+	
+		
+		printf("------------------ANSWER------------------\n");
+		i += getHeader(i, recvHead); 
+		if(recvHead->tag == 33152){  
+		printf("Find the Answers\n");
+			i += getQuery(i, recvQuery); 
+			recvRecord->name = recvQuery->name; 
+			recvRecord->type = recvQuery->qtype;
+			recvRecord->rclass = recvQuery->qclass;
+			
+			i += 6; 
+			
+			i += getRRs(i, recvRecord);
+			if(recvQuery->qtype == MX){
+				mxRecord->name = (char*)malloc((strlen(recvRecord->rdata)+1)*sizeof(char));
+				strcpy(mxRecord->name, recvRecord->rdata);
+				mxRecord->type = A_TYPE;
+				mxRecord->rclass = 1;
+				i += getRRs(i, mxRecord);
+			}
+
+			printf("Query Name: %s\n", recvRecord->name); 
+			if(recvRecord->type == A_TYPE){
+				printf("Query Type: A\n"); 
+				printf("Query Class: IN\n"); 
+				printf("TTL: %d\n", recvRecord->ttl);
+				printf("IP Addr: %s\n", recvRecord->rdata);
+			}
+			else if(recvRecord->type == CNAME_TYPE){
+				printf("Query Type: CNAME\n");
+				printf("Query Class: IN\n"); 
+				printf("TTL: %d\n", recvRecord->ttl);
+				printf("Another Domain Name Addr: %s\n", recvRecord->rdata);
+			} 
+			else if(recvRecord->type == MX_TYPE){
+				printf("Query Type: MX\n");
+				printf("Query Class: IN\n"); 
+				printf("TTL: %d\n", recvRecord->ttl);
+				printf("Mail Server Domain Name: %s\n", recvRecord->rdata);
+				printf("Mail Server IP Address: %s\n", mxRecord->rdata);
+			} 
+		}else{ 
+			i += getQuery(i, recvQuery); 
+			printf("Sorry, we didn't found anything\n");
+			printf("Please try again later!\n");
+		}
+		printf("----------------ANSWER END----------------\n");
+		
+       }
+    printf("Quit with Safety\n");
+	close(clientfd);
+	return 0;
+
+}
+
+void my_strcpy(dns_query *b, char* a){
+	int len = strlen(a)+1;
+	
+	b->name = (char*)malloc(len*sizeof(char));
+	memcpy(b->name, a, len);
+	
+}
+
+unsigned int head2buf(char *o, dns_header *head){
+	memcpy(o, head, sizeof(dns_header));
+	int p=0;
+	
+	
+	
+	
+	return sizeof(dns_header);
+}
+
+unsigned int query2buf(char *o, dns_query *query){
+	char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(query->name[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(query->name[i] == '\0'){
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o++;
+	int len = o - ini; 
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o+=sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o+=sizeof(short);
+
+
+
+
+
+	return len+2*sizeof(short);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+unsigned char* convertDomainName(char *name){
+	
+	unsigned char *converted;
+	int i = 0;
+	int j = 1; 
+	int count = 0;
+	int tempts = 0;
+	while(1){
+		
+		if(name[i] == '.'){
+			if(tempts == 0){
+			converted[0] = count + '0';
+			
+			count = 0;
+			i++; j++;
+			tempts = 1;
+			}
+			else{
+			converted[j-count-1] = count + '0';
+			
+			count = 0;
+			i++; j++;
+			}
+			
+		}
+		else if(name[i] == '\0'){
+			converted[j] = name[i];
+			converted[j-count-1] = count + '0';
+			break;
+		}
+		else{
+			converted[j] = name[i];
+			j++;
+			i++;
+			count++; 
+		}
+	}
+	
+	return converted;
+}
+
+
+unsigned int getHeader(char *q, dns_header *header){
+	
+	header->id = ntohs(*(uint16_t*) (q));
+	header->tag = ntohs(*(uint16_t*) (q+2));
+	header->queryNum = ntohs(*(uint16_t*) (q+4));
+	
+	header->answerNum = ntohs(*(uint16_t*) (q+6));
+	header->authorNum = ntohs(*(uint16_t*) (q+8));
+	header->addNum = ntohs(*(uint16_t*) (q+10));
+	
+	return sizeof(dns_header);
+}
+
+
+unsigned int getQuery(char *q, dns_query *query){
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char*)malloc(i*sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+	
+	query->qtype = ntohs(*(uint16_t*) (q));
+	query->qclass = ntohs(*(uint16_t*) (q+2));
+	
+	
+	return i+4+1; 
+}
+
+unsigned int getRRs(char *q, dns_rr *rRecord){
+	uint32_t ipAddr;
+	rRecord->ttl = ntohl(*(uint32_t*)(q)); 
+	char str[INET_ADDRSTRLEN];
+	struct in_addr addr;
+	
+	q+=sizeof(rRecord->ttl);
+	rRecord->data_len = ntohs(*(uint16_t*)(q));
+	
+	q+=sizeof(rRecord->data_len);
+	
+	
+	if(rRecord->type == MX_TYPE){
+		q += 2; 
+	}
+	
+	if(rRecord->type == A_TYPE){
+		ipAddr = *(uint32_t*)(q);
+		
+		memcpy(&addr, &ipAddr, 4);
+		char *ptr = inet_ntop(AF_INET, &addr, str, sizeof(str)); 
+		
+		rRecord->rdata = (char*)malloc((strlen(ptr)+1)*sizeof(char));
+		strcpy(rRecord->rdata,ptr);
+		return 4 + 2 + rRecord->data_len;
+	}
+	else if(rRecord->type == CNAME_TYPE){
+		char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	rRecord->rdata = (char*)malloc(i*sizeof(char));
+	memcpy(rRecord->rdata, domainName, i); 
+	
+	
+		return 4 + 2 + rRecord->data_len +1;
+	}
+	else if(rRecord->type == MX_TYPE){
+		int firstlen = rRecord->data_len - 5;
+		char domainName[100];
+		memset(domainName, 0, 100);
+		char *d = domainName;
+		
+		uint8_t count = 0;
+		int i = 0; 
+	
+	
+		while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+			domainName[i] = '\0';
+			i++;
+			break;
+		}
+	}
+	
+	
+	
+	strcpy(domainName, strcat(domainName, rRecord->name)); 
+	
+	int totalen = strlen(rRecord->name) + i; 
+	rRecord->rdata = (char*)malloc(totalen*sizeof(char));
+	memcpy(rRecord->rdata, domainName, totalen); 
+	
+		
+		return 12+rRecord->data_len;
+	}
+	
+}
+
+cnus.c文件如下：
+#include<stdio.h>
+#include<sys/types.h>
+#include<string.h>
+#include<unistd.h>
+#include<netinet/in.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<stdint.h>
+#include "DNS.h"
+#define LINE     10
+#define DNS_MAX_LENGTH 1023
+int isequal(char *str1, char* str2);
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr);
+unsigned int getHeader(char *q, dns_header *header);
+unsigned int getQuery(char *q, dns_query *query);
+void splitTwoDomainName(char *domainName, char *splitName);
+unsigned int head2buf(char *o, dns_header *header);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int getRRs(char *q, dns_rr *rRecord);
+unsigned int rr2buf(char *o, dns_rr* rr); 
+
+int main(){
+	int sockup;
+	struct sockaddr_in localAddr;
+	struct sockaddr_in upAddr;
+	struct sockaddr_in downAddr;
+	unsigned int upAddrLen;
+	char upInBuffer[DNS_MAX_LENGTH];
+	char upOutBuffer[DNS_MAX_LENGTH];
+	char splitName[128]; 
+	char ipAddr[100];
+	dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(recvQuery);
+	dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));initHead(recvHead);
+	
+	dns_query *resQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(resQuery);
+	dns_header *resHead = (dns_header *)malloc(sizeof(dns_header));initHead(resHead);
+	dns_rr *resRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(resRecord);
+	unsigned short port=53;
+	int recvMsgSize;
+	int outMsgSize; 
+	char *i;
+	char *o;
+	
+	
+	if((sockup=socket(PF_INET,SOCK_DGRAM,0))<0)  printf("socket() failed\n");
+	
+	init_sockaddr_in("127.0.0.5", 53, &localAddr);
+	if((bind (sockup,(struct sockaddr*)&localAddr,sizeof(localAddr)))<0){
+		printf("bind() failed\n");
+	} 
+	while(1){
+	upAddrLen=sizeof(upAddr);
+	
+	if((recvMsgSize=recvfrom(sockup,upInBuffer,DNS_MAX_LENGTH,0,(struct sockaddr*)&upAddr,&upAddrLen))<0){
+		printf("recvfrom() failed\n");
+	}
+	printf("Handling client %s\n",inet_ntoa(upAddr.sin_addr));
+	
+    
+	i = upInBuffer;
+	i += getHeader(i, recvHead);
+	i += getQuery(i, recvQuery); 	
+	
+	
+	splitTwoDomainName(recvQuery->name, splitName);
+	
+	
+	
+	resHead->id =htons(recvHead->id);
+	resHead->tag =htons(0x8000);
+	resHead->queryNum =htons(recvHead->queryNum);
+	resHead->answerNum = htons(1); 
+	resHead->authorNum = 0;
+	resHead->addNum = 0;
+	resQuery = recvQuery;
+	resRecord->name=recvQuery->name;
+    resRecord->rclass=recvQuery->qclass;
+	resRecord->type=A_TYPE;
+	resRecord->ttl = (uint32_t)86400;
+	resRecord->data_len = 4;
+	
+	
+    int tf=isequal(splitName,"com");
+    
+    tf=isequal(splitName,"org");
+    
+	
+	if(isequal(splitName,"edu.cn")){
+		
+	   
+	    strcpy(ipAddr, "127.0.0.6");
+	    
+	    char *p = ipAddr;
+	    int len = strlen(ipAddr)+1;
+	    resRecord->rdata=(char*)malloc(len*sizeof(char));
+	    
+	    memcpy(resRecord->rdata,p,len);
+	    
+	    
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+	 	o += rr2buf(o,resRecord);
+
+	}
+	else if (isequal(splitName,"gov.us")){
+		
+		
+		strcpy(ipAddr, "127.0.0.7");
+		char *p = ipAddr;
+	    int len = strlen(ipAddr)+1;
+	    resRecord->rdata=(char*)malloc(len*sizeof(char));
+	    memcpy(resRecord->rdata,p,len);
+	    
+	    
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+	 	o += rr2buf(o,resRecord);
+		
+	}
+	else{
+		
+		resHead->answerNum = 0;
+		
+		strcpy(ipAddr, "255.255.255.255");
+		resHead->tag =htons(0x8183);
+		char *p = ipAddr;
+	    int len = strlen(ipAddr)+1;
+	    resRecord->rdata=(char*)malloc(len*sizeof(char));
+	    memcpy(resRecord->rdata,p,len);
+	    
+	    
+		
+		
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+		o += query2buf(o,resQuery); 
+	}
+	
+	
+	
+	
+	outMsgSize=o - upOutBuffer +1;
+	
+	if(sendto(sockup,upOutBuffer,outMsgSize,0,(struct sockaddr*)&upAddr,sizeof(upAddr))!=outMsgSize){
+		printf("sendto() problem!\n");
+	}
+	
+	}	
+}
+void splitTwoDomainName(char *domainName, char *splitName){
+	int i = strlen(domainName)-1; 
+	
+	int j = 0;
+	int k = 0;
+	int countdot=0;
+	char invertName[100];
+	char splitOneName[100];
+	memset(invertName, 0, 100);
+	memset(splitOneName, 0, 100);
+	while(1){
+		if(domainName[i]!='.'){
+			
+			invertName[j] = domainName[i];
+			
+			i--;j++; 
+		}
+		else if(countdot==0){
+			
+			invertName[j] = domainName[i];
+			
+			i--;j++; 
+			countdot++;
+		}
+		else break;
+	}
+	invertName[j] = '\0';
+	
+	i = strlen(invertName)-1;
+	while(1){
+		if(k < strlen(invertName)){
+			
+			splitName[k] = invertName[i];
+			i--; k++;
+		}else break;
+		
+	}
+	splitName[k] = '\0';
+	
+}
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr){
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr=inet_addr(ip);
+    memset(addr->sin_zero, 0, sizeof(addr->sin_zero));
+}
+ int isequal(char *str1, char* str2)
+{
+    if (strlen(str1)!=strlen(str2))
+     return 0;
+     int i=0;
+    for (i = 0; str1[i]!='\0'; i++){
+        if (str1[i]!=str2[i])
+        return 0;
+     }
+   return 1;
+  }
+  
+unsigned int head2buf(char *o, dns_header *head){
+	memcpy(o, head, sizeof(dns_header));
+	
+	return sizeof(dns_header);
+}
+
+unsigned int query2buf(char *o, dns_query *query){
+	char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(query->name[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(query->name[i] == '\0'){
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o++;
+	int len = o - ini; 
+	
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o+=sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o+=sizeof(short);
+
+
+
+
+
+	printf("length22: %d\n",  len+2*sizeof(short)); 
+	return len+2*sizeof(short);
+}
+
+unsigned int rr2buf(char *o, dns_rr* rr) {
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+
+
+
+
+
+
+
+
+	o+=2;
+	
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+	
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+	
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	uint32_t  ipAddr = inet_addr(rr->rdata);
+	memcpy(o, &ipAddr,rr->data_len); 
+	
+	o+=rr->data_len; 
+	return 11+strlen(rr->name)+(rr->data_len);
+}
+
+unsigned int getHeader(char *q, dns_header *header){
+	
+	
+	
+	
+	
+		
+	
+	
+	
+	header->id = ntohs(*(uint16_t*) (q));
+	header->tag = ntohs(*(uint16_t*) (q+2));
+	header->queryNum = ntohs(*(uint16_t*) (q+4));
+	
+	header->answerNum = ntohs(*(uint16_t*) (q+6));
+	header->authorNum = ntohs(*(uint16_t*) (q+8));
+	header->addNum = ntohs(*(uint16_t*) (q+10));
+	
+	return sizeof(dns_header);
+}
+
+unsigned int getQuery(char *q, dns_query *query){
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			printf("count:%d\n", count);
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char*)malloc(i*sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+	
+	query->qtype = ntohs(*(uint16_t*) (q));
+	query->qclass = ntohs(*(uint16_t*) (q+2));
+	
+	
+	return i+4+1; 
+}
+
+comorgA.txt文件如下：
+wyx.microsoft.com 86400 IN A 192.168.3.1
+yzy.ietf.org 86400 IN A 192.168.3.2
+mail.shiyan.microsoft.com 86400 IN A 192.168.3.5
+mail.dns.ietf.org 86400 IN A 192.168.3.7
+comorg.c文件如下：
+#include<stdio.h>
+#include<sys/types.h>
+#include<string.h>
+#include<unistd.h>
+#include<netinet/in.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<stdint.h>
+#include "DNS.h"
+#define LINE     10
+#define DNS_MAX_LENGTH 1023
+unsigned int getHeader(char *q, dns_header *header);
+unsigned int getQuery(char *q, dns_query *query);
+unsigned int getRRs(char *q, dns_rr *rRecord);
+int isequal(char *str1, char* str2);
+unsigned int rr2buf(char *o, dns_rr* rr);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int head2buf(char *o, dns_header *header);
+unsigned int add2buf(char *o, dns_rr* rr, dns_query* query);
+
+
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr);
+
+int main(){
+	int state=0;  
+	int sockup;
+	struct sockaddr_in localAddr;
+	struct sockaddr_in upAddr;
+	struct sockaddr_in downAddr;
+	unsigned int upAddrLen;
+	char upInBuffer[DNS_MAX_LENGTH];
+	char upOutBuffer[DNS_MAX_LENGTH];
+	unsigned short port=53;
+	int recvMsgSize;
+	int outMsgSize; 
+	char ipAddr[100];
+	
+	
+	
+	dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(recvQuery);
+	dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));initHead(recvHead);
+	dns_rr *recvrRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(recvrRecord);  
+	
+	dns_query *resQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(resQuery);
+	dns_header *resHead = (dns_header *)malloc(sizeof(dns_header));initHead(resHead);
+	dns_rr *resRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(resRecord);
+	
+	dns_query *mxQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(mxQuery);
+	dns_header *mxHead = (dns_header *)malloc(sizeof(dns_header));initHead(mxHead);
+	dns_rr *mxRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(mxRecord);
+	
+	
+	if((sockup=socket(PF_INET,SOCK_DGRAM,0))<0)  printf("socket() failed\n");
+	
+	init_sockaddr_in("127.0.0.4", 53, &localAddr);
+	if((bind (sockup,(struct sockaddr*)&localAddr,sizeof(localAddr)))<0){
+		printf("bind() failed\n");
+	} 
+	while(1){
+	state=0;
+	upAddrLen=sizeof(upAddr);
+	
+	if((recvMsgSize=recvfrom(sockup,upInBuffer,DNS_MAX_LENGTH,0,(struct sockaddr*)&upAddr,&upAddrLen))<0){
+		printf("recvfrom() failed\n");
+	}
+	printf("Handling client %s\n",inet_ntoa(upAddr.sin_addr));
+	
+	
+	char *i = upInBuffer;
+	i += getHeader(i, recvHead);
+	i += getQuery(i, recvQuery); 	
+	printf("The domain name is: %s\n", recvQuery->name);
+	
+	
+	resHead->id =htons(recvHead->id);
+	resHead->tag =htons(0x8000);
+	resHead->queryNum =htons(recvHead->queryNum);
+	resHead->answerNum = htons(1); 
+	resHead->authorNum = 0;
+	resHead->addNum = 0;
+	resQuery = recvQuery;
+	resRecord->name=recvQuery->name;
+    resRecord->rclass=recvQuery->qclass;
+	resRecord->type=recvQuery->qtype;
+	resRecord->ttl = (uint32_t)86400;
+	resRecord->data_len = 4;
+	
+	
+	 if(recvQuery->qtype==A_TYPE) {
+	   freopen("comorgA.txt", "r", stdin);
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_ip[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_ip)){
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_ip);
+				
+
+				resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_ip)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_ip);
+				resHead->answerNum = htons(1);
+				resRecord->data_len=strlen(resRecord->rdata)+1;
+				resHead->tag = htons(0x8180);
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}   
+	}
+	else if(recvQuery->qtype==CNAME_TYPE){
+		freopen("comorgC.txt", "r", stdin);
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_addr[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_addr)){
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_addr);
+				
+
+				resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_addr);
+				resHead->answerNum = htons(1);
+				resRecord->data_len=strlen(resRecord->rdata)+1;
+				resHead->tag = htons(0x8180);
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}   
+	}
+	else if(recvQuery->qtype==MX_TYPE){
+		
+		freopen("comorgM.txt", "r", stdin);
+		
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_addr[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_addr)){
+	    	
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_addr: %s\n",file_addr);
+				
+
+				resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_addr);
+				resHead->answerNum = htons(1);
+				
+		        resRecord->data_len = strlen(resRecord->rdata)-strlen(recvQuery->name) + 4;
+				resHead->tag = htons(0x8180);
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		} 
+		if(state==1){
+		mxQuery->name = (char*)malloc((strlen(resRecord->rdata)+1)*sizeof(char));
+		strcpy(mxQuery->name, resRecord->rdata);
+		
+		mxQuery->qclass = recvQuery->qclass;
+		mxQuery->qtype = A_TYPE; 
+		freopen("comorgA.txt", "r", stdin);
+	    char file_ip[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_ip)){
+	    	if(isequal(mxQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_ip);
+				
+		    	mxRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(mxRecord->name, file_name);
+				mxRecord->ttl = (uint32_t)(atoi(file_ttl));
+				mxRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(mxRecord->rdata, file_ip);
+				mxRecord->data_len=4;
+				mxRecord->type=A_TYPE; 
+	            mxRecord->rclass=recvQuery->qclass;
+                resHead->addNum = htons(1); 
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}
+	  }
+	 }	  
+	 
+	char* o=upOutBuffer;
+	
+	if(state==0){
+		
+		resHead->tag =htons(0x8183);
+		
+		resHead->answerNum = 0;
+		
+		o = upOutBuffer; 
+		
+	 	o += head2buf(o, resHead);
+	 	
+	 	o += query2buf(o,resQuery);
+		
+	}else{
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+	 	o += rr2buf(o,resRecord);
+	 	if(recvQuery->qtype == MX_TYPE)
+	 	o+=add2buf(o, mxRecord, recvQuery);
+	}
+
+
+	
+	
+	outMsgSize = o - upOutBuffer + 1;
+	
+	if(sendto(sockup,upOutBuffer,outMsgSize,0,(struct sockaddr*)&upAddr,sizeof(upAddr))!=outMsgSize){
+		printf("sendto() problem!\n");
+	}
+	
+	}	
+
+}
+unsigned int head2buf(char *o, dns_header *head){
+	memcpy(o, head, sizeof(dns_header));
+	
+	return sizeof(dns_header);
+}
+
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr){
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr=inet_addr(ip);
+    memset(addr->sin_zero, 0, sizeof(addr->sin_zero));
+}
+
+unsigned int getHeader(char *q, dns_header *header){
+	
+	
+	
+	
+	
+		
+	
+	
+	
+	header->id = ntohs(*(uint16_t*) (q));
+	header->tag = ntohs(*(uint16_t*) (q+2));
+	header->queryNum = ntohs(*(uint16_t*) (q+4));
+	
+	header->answerNum = ntohs(*(uint16_t*) (q+6));
+	header->authorNum = ntohs(*(uint16_t*) (q+8));
+	header->addNum = ntohs(*(uint16_t*) (q+10));
+	
+	return sizeof(dns_header);
+}
+
+
+unsigned int getQuery(char *q, dns_query *query){
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char*)malloc(i*sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+	
+	query->qtype = ntohs(*(uint16_t*) (q));
+	query->qclass = ntohs(*(uint16_t*) (q+2));
+	
+	
+	return i+4+1; 
+}
+
+unsigned int getRRs(char *q, dns_rr *rRecord){
+	uint32_t ipAddr;
+	rRecord->ttl = ntohl(*(uint32_t*)(q)); 
+	char str[INET_ADDRSTRLEN];
+	struct in_addr addr;
+	
+	q+=sizeof(rRecord->ttl);
+	rRecord->data_len = ntohs(*(uint16_t*)(q));
+	
+	q+=sizeof(rRecord->data_len);
+	rRecord->rdata = (char*)malloc((rRecord->data_len)*sizeof(char));
+	
+	if(rRecord->type == MX_TYPE){
+		q += 2; 
+	}
+	
+	if(rRecord->type == A_TYPE){
+		ipAddr = *(uint32_t*)(q);
+		
+		memcpy(&addr, &ipAddr, 4);
+		char *ptr = inet_ntop(AF_INET, &addr, str, sizeof(str)); 
+		
+		return 4 + 2 + rRecord->data_len;
+	}
+	else if(rRecord->type == CNAME_TYPE){
+		char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	rRecord->rdata = (char*)malloc(i*sizeof(char));
+	memcpy(rRecord->rdata, domainName, i); 
+	
+	
+		return 4 + 2 + rRecord->data_len +1;
+	}
+	else if(rRecord->type == MX_TYPE){
+		int firstlen = rRecord->data_len - 5;
+		char domainName[100];
+		memset(domainName, 0, 100);
+		char *d = domainName;
+		
+		uint8_t count = 0;
+		int i = 0; 
+	
+	
+		while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+			domainName[i] = '\0';
+			i++;
+			break;
+		}
+	}
+	
+	
+	
+	strcpy(domainName, strcat(domainName, rRecord->name)); 
+	
+	int totalen = strlen(rRecord->name) + i; 
+	rRecord->rdata = (char*)malloc(totalen*sizeof(char));
+	memcpy(rRecord->rdata, domainName, totalen); 
+	
+		
+		return 12+rRecord->data_len;
+	}
+	
+}
+
+unsigned int query2buf(char *o, dns_query *query){
+	char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(query->name[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(query->name[i] == '\0'){
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o++;
+	int len = o - ini; 
+	
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o+=sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o+=sizeof(short);
+
+
+
+
+
+	
+	return len+2*sizeof(short);
+}
+
+unsigned int rr2buf(char *o, dns_rr* rr) {
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+	
+
+
+
+
+
+
+
+
+	o+=2;
+	
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	printf("rrType: %d\n", rr->type);
+	o+=2;
+	
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	temp32=htonl(rr->ttl); 
+	printf("ttlconvert: %d\n", temp32);
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+	
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	
+	if(rr->type == MX_TYPE){
+		temp=htons(1);
+		memcpy(o, &temp, sizeof(short));
+		o+=2;
+	}
+	
+	if(rr->type == A_TYPE){
+		uint32_t  ipAddr = inet_addr(rr->rdata);
+		memcpy(o, &ipAddr,rr->data_len); 
+		
+		o+=rr->data_len; 
+		return 16;
+	}
+	else if(rr->type == CNAME_TYPE){
+		char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(rr->rdata[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(rr->rdata[i] == '\0'){
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+		return 12 + rr->data_len + 1;
+	}
+	else if(rr->type == MX_TYPE){ 
+		char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(rr->rdata[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				break;
+				
+		}
+		else if(rr->rdata[i] == '\0'){
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o--;
+	
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+	return 16+i;
+	}
+	
+	
+}
+
+ int isequal(char *str1, char* str2)
+{
+    if (strlen(str1)!=strlen(str2))
+     return 0;
+     int i=0;
+    for (i = 0; str1[i]!='\0'; i++){
+        if (str1[i]!=str2[i])
+        return 0;
+     }
+   return 1;
+  }
+  
+  
+unsigned int add2buf(char *o, dns_rr* rr, dns_query* query) {
+	
+	
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49152+12+strlen(query->name)+2+4+14); 
+	memcpy(o, &temp, sizeof(short)); 
+
+
+
+
+
+
+
+
+	o+=2;
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+
+	
+	
+	uint32_t  ipAddr = inet_addr(rr->rdata);
+	memcpy(o, &ipAddr, rr->data_len); 
+	
+	o+=rr->data_len; 
+	return 16;
+}
+comorgC.txt文件如下：
+wyx.microsoft.com 86400 IN CNAME wyx.dns.com
+yzy.ietf.org 86400 IN CNAME yzy.dns.com
+
+comorgM.txt文件如下：
+shiyan.microsoft.com 86400 IN MX mail.shiyan.microsoft.com
+dns.ietf.org 86400 IN MX mail.dns.ietf.org
+
+
+DNS.h文件如下：
+#ifndef DNS_H_
+#define DNS_H_
+#define DNSMAXLEN 526
+#define QR 32768
+#define NAME_TO_ADDR 0
+#define ADDR_TO_NAME 2048
+#define SERV_STAT 4096
+#define AA 1024
+#define TC 512
+#define RD 256
+#define RA 128
+#define SUCCESS 0
+#define FORMAT_ERR 1
+#define SERV_ERR 2
+#define NOT_EXIST 3
+#define FORMAT_NOT_SUPPORT 4
+#define POLICY 5
+#define A_TYPE 1
+#define NS_TYPE 2
+#define CNAME_TYPE 5
+#define MX_TYPE 15
+#define PTR_TYPE 12 
+
+
+struct DNS_Header{
+	unsigned short id;
+	unsigned short tag;
+	unsigned short queryNum;
+	unsigned short answerNum;
+	unsigned short authorNum;
+	unsigned short addNum;
+};
+
+typedef struct DNS_Header dns_header;
+
+
+struct DNS_Query{
+	unsigned char* name;
+	unsigned short qtype;
+	unsigned short qclass;
+};
+
+typedef struct DNS_Query dns_query;
+
+
+struct DNS_RR{
+	unsigned char *name;
+	unsigned short type;
+	unsigned short rclass;
+	unsigned int ttl;
+	unsigned short data_len;
+	unsigned char *rdata;
+};
+
+typedef struct DNS_RR dns_rr;
+
+
+void initHead(dns_header *head){
+	head->id=0;
+	head->tag=0;
+	head->queryNum=0;
+	head->answerNum=0;
+	head->authorNum=0;
+	head->addNum=0;
+}
+
+
+void initQuery(dns_query *query){
+	
+	if(query->name!=NULL){
+		printf("hi\n");
+		free(query->name);
+		query->name=NULL;
+	}
+	
+	query->qtype=0;
+	query->qclass=0;
+}
+
+
+void initRR(dns_rr *rr){
+	if(rr->name!=NULL){
+		free(rr->name);
+		rr->name=NULL;
+	}
+	if(rr->rdata!=NULL){
+		free(rr->rdata);
+		rr->rdata=NULL;
+	}
+	rr->type=0;
+	rr->rclass=0;
+	rr->ttl=0;
+	rr->data_len=0;
+}
+
+#endif
+
+eduA.txt文件如下：
+yzy.edu.cn 86400 IN A 192.168.88.12
+wyx.edu.cn 86400 IN A 192.168.12.11
+mail.aaa.edu.cn 86400 IN A 192.132.11.2
+mail.ddd.edu.cn 86400 IN A 192.111.11.1
+
+edu.c文件如下：
+
+#include<stdio.h>
+#include<sys/types.h>
+#include<string.h>
+#include<unistd.h>
+#include<netinet/in.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<stdint.h>
+#include "DNS.h"
+#define LINE     10
+#define DNS_MAX_LENGTH 1023
+
+unsigned int getHeader(char *q, dns_header *header);
+unsigned int getQuery(char *q, dns_query *query);
+unsigned int getRRs(char *q, dns_rr *rRecord);
+int isequal(char *str1, char* str2);
+unsigned int rr2buf(char *o, dns_rr* rr);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int head2buf(char *o, dns_header *header);
+unsigned int add2buf(char *o, dns_rr* rr, dns_query* query);
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr);
+int main(){
+	int state=0;  
+	int sockup;
+	struct sockaddr_in localAddr;
+	struct sockaddr_in upAddr;
+	struct sockaddr_in downAddr;
+	unsigned int upAddrLen;
+	char upInBuffer[DNS_MAX_LENGTH];
+	char upOutBuffer[DNS_MAX_LENGTH];
+	unsigned short port=53;
+	int recvMsgSize;
+	int outMsgSize; 
+	char ipAddr[100];
+	
+	
+	
+	dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(recvQuery);
+	dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));initHead(recvHead);
+	dns_rr *recvrRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(recvrRecord); 
+	
+	dns_query *resQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(resQuery);
+	dns_header *resHead = (dns_header *)malloc(sizeof(dns_header));initHead(resHead);
+	dns_rr *resRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(resRecord); 
+	
+	dns_query *mxQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(mxQuery);
+	dns_header *mxHead = (dns_header *)malloc(sizeof(dns_header));initHead(mxHead);
+	dns_rr *mxRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(mxRecord);
+	
+	
+	if((sockup=socket(PF_INET,SOCK_DGRAM,0))<0)  printf("socket() failed\n");
+	
+	init_sockaddr_in("127.0.0.6", 53, &localAddr);
+	if((bind (sockup,(struct sockaddr*)&localAddr,sizeof(localAddr)))<0){
+		printf("bind() failed\n");
+	} 
+	while(1){
+	state=0;
+	upAddrLen=sizeof(upAddr);
+	
+	if((recvMsgSize=recvfrom(sockup,upInBuffer,DNS_MAX_LENGTH,0,(struct sockaddr*)&upAddr,&upAddrLen))<0){
+		printf("recvfrom() failed\n");
+	}
+	printf("Handling client %s\n",inet_ntoa(upAddr.sin_addr));
+	
+	
+	char *i = upInBuffer;
+	i += getHeader(i, recvHead);
+	i += getQuery(i, recvQuery); 	
+	printf("The domain name is: %s\n", recvQuery->name);
+	
+	
+	resHead->id =htons(recvHead->id);
+	resHead->tag =htons(0x8000);
+	resHead->queryNum =htons(recvHead->queryNum);
+	resHead->answerNum = htons(1); 
+	resHead->authorNum = 0;
+	resHead->addNum = 0;
+	resQuery = recvQuery;
+	resRecord->name=recvQuery->name;
+    resRecord->rclass=recvQuery->qclass;
+	resRecord->type=recvQuery->qtype;
+	resRecord->ttl = (uint32_t)86400;
+	resRecord->data_len = 4;
+	 if(recvQuery->qtype==A_TYPE){
+	   freopen("eduA.txt", "r", stdin);
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_ip[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_ip)){
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_ip);
+	    		
+	    		resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_ip)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_ip);
+				resRecord->data_len=strlen(resRecord->rdata)+1;
+				resHead->answerNum = htons(1);
+				resHead->tag = htons(0x8180);
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}   	    
+     }
+     else if(recvQuery->qtype==CNAME_TYPE){
+     	freopen("eduC.txt", "r", stdin);
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_addr[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_addr)){
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_addr);
+	    		
+	    		resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_addr);
+				resRecord->data_len=strlen(resRecord->rdata)+1;
+				resHead->answerNum = htons(1);
+				resHead->tag = htons(0x8180);
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}   	    
+	 }
+	 	else if(recvQuery->qtype==MX_TYPE){
+		printf("in file M\n");
+		freopen("eduM.txt", "r", stdin);
+		printf("flag1\n"); 
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_addr[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_addr)){
+	    	printf("flag2\n");
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_addr: %s\n",file_addr);
+				
+
+				resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_addr);
+				resHead->answerNum = htons(1);
+				
+		        resRecord->data_len = strlen(resRecord->rdata)-strlen(recvQuery->name) + 4;
+				resHead->tag = htons(0x8180);
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		} 
+		if(state==1){
+		mxQuery->name = (char*)malloc((strlen(resRecord->rdata)+1)*sizeof(char));
+		strcpy(mxQuery->name, resRecord->rdata);
+		
+		mxQuery->qclass = recvQuery->qclass;
+		mxQuery->qtype = A_TYPE; 
+		freopen("eduA.txt", "r", stdin);
+	    char file_ip[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_ip)){
+	    	if(isequal(mxQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_ip);
+				
+		    	mxRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(mxRecord->name, file_name);
+				mxRecord->ttl = (uint32_t)(atoi(file_ttl));
+				mxRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(mxRecord->rdata, file_ip);
+				mxRecord->data_len=4;
+				mxRecord->type=A_TYPE; 
+	            mxRecord->rclass=recvQuery->qclass;
+                resHead->addNum = htons(1); 
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}
+	  }
+	 } 	  
+	
+	 char* o=upOutBuffer;
+	if(state==0){
+		
+		resHead->tag =htons(0x8183);
+		
+		resHead->answerNum = 0;
+		
+		o = upOutBuffer; 
+		
+	 	o += head2buf(o, resHead);
+	 	
+	 	o += query2buf(o,resQuery);
+		
+	}else{
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+	 	o += rr2buf(o,resRecord);
+	 	if(recvQuery->qtype == MX_TYPE)
+	 	o+=add2buf(o, mxRecord, recvQuery);
+	}
+
+
+	
+	
+	outMsgSize = o - upOutBuffer + 1;
+	
+	if(sendto(sockup,upOutBuffer,outMsgSize,0,(struct sockaddr*)&upAddr,sizeof(upAddr))!=outMsgSize){
+		printf("sendto() problem!\n");
+	}
+  }	
+}	
+unsigned int head2buf(char *o, dns_header *head){
+	memcpy(o, head, sizeof(dns_header));
+	
+	return sizeof(dns_header);
+}
+
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr){
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr=inet_addr(ip);
+    memset(addr->sin_zero, 0, sizeof(addr->sin_zero));
+}
+
+unsigned int getHeader(char *q, dns_header *header){
+	
+	
+	
+	
+	
+		
+	
+	
+	
+	header->id = ntohs(*(uint16_t*) (q));
+	header->tag = ntohs(*(uint16_t*) (q+2));
+	header->queryNum = ntohs(*(uint16_t*) (q+4));
+	
+	header->answerNum = ntohs(*(uint16_t*) (q+6));
+	header->authorNum = ntohs(*(uint16_t*) (q+8));
+	header->addNum = ntohs(*(uint16_t*) (q+10));
+	
+	return sizeof(dns_header);
+}
+
+
+unsigned int getQuery(char *q, dns_query *query){
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char*)malloc(i*sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+	
+	query->qtype = ntohs(*(uint16_t*) (q));
+	query->qclass = ntohs(*(uint16_t*) (q+2));
+	
+	
+	return i+4+1; 
+}
+
+unsigned int getRRs(char *q, dns_rr *rRecord){
+	uint32_t ipAddr;
+	rRecord->ttl = ntohl(*(uint32_t*)(q)); 
+	char str[INET_ADDRSTRLEN];
+	struct in_addr addr;
+	
+	q+=sizeof(rRecord->ttl);
+	rRecord->data_len = ntohs(*(uint16_t*)(q));
+	
+	q+=sizeof(rRecord->data_len);
+	
+	
+	
+	
+	if(rRecord->type = A_TYPE){
+		ipAddr = *(uint32_t*)(q);
+		
+		memcpy(&addr, &ipAddr, 4);
+		char *ptr = inet_ntop(AF_INET, &addr, str, sizeof(str)); 
+		
+		rRecord->rdata = (char*)malloc((strlen(ptr)+1)*sizeof(char));
+		strcpy(rRecord->rdata,ptr);
+		return 4 + 2 + rRecord->data_len;
+	}
+	else if(rRecord->type = CNAME_TYPE){
+		strcpy(rRecord->rdata, q);
+		
+		return 4 + 2 + rRecord->data_len;
+	}
+	
+}
+
+
+unsigned int query2buf(char *o, dns_query *query){
+	char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(query->name[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(query->name[i] == '\0'){
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o++;
+	int len = o - ini; 
+	
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o+=sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o+=sizeof(short);
+
+
+
+
+
+	
+	return len+2*sizeof(short);
+}
+
+unsigned int rr2buf(char *o, dns_rr* rr) {
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+	
+
+
+
+
+
+
+
+
+	o+=2;
+	
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+	
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+	
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	
+	if(rr->type == MX_TYPE){
+		temp=htons(1);
+		memcpy(o, &temp, sizeof(short));
+		o+=2;
+	}
+	
+	if(rr->type == A_TYPE){
+		uint32_t  ipAddr = inet_addr(rr->rdata);
+		memcpy(o, &ipAddr,rr->data_len); 
+		
+		o+=rr->data_len; 
+		return 16;
+	}
+	else if(rr->type == CNAME_TYPE){
+		char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(rr->rdata[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(rr->rdata[i] == '\0'){
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+		return 12 + rr->data_len + 1;
+	}
+	else if(rr->type == MX_TYPE){ 
+		char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(rr->rdata[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				break;
+				
+		}
+		else if(rr->rdata[i] == '\0'){
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o--;
+	
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+	return 16+i;
+	}
+	
+	
+}
+ 
+unsigned int add2buf(char *o, dns_rr* rr, dns_query* query) {
+	
+	
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49152+12+strlen(query->name)+2+4+14); 
+	memcpy(o, &temp, sizeof(short)); 
+
+
+
+
+
+
+
+
+	o+=2;
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+
+	
+	
+	uint32_t  ipAddr = inet_addr(rr->rdata);
+	memcpy(o, &ipAddr, rr->data_len); 
+	
+	o+=rr->data_len; 
+	return 16;
+
+
+}
+
+ int isequal(char *str1, char* str2)
+{
+    if (strlen(str1)!=strlen(str2))
+     return 0;
+     int i=0;
+    for (i = 0; str1[i]!='\0'; i++){
+        if (str1[i]!=str2[i])
+        return 0;
+     }
+   return 1;
+  }
+eduC.txt文件如下：
+yzy.edu.cn 86400 IN CNAME yzy.shiyan.dns
+wyx.edu.cn 86400 IN CNAME wyx.shiyan.dns
+eduM.txt文件如下：
+ddd.edu.cn 86400 IN MX mail.ddd.edu.cn
+aaa.edu.cn 86400 IN MX mail.aaa.edu.cn
+exec.sh文件如下：
+files=(*)
+
+for file in "${files[@]}"
+do
+    if [[ -f $file ]]; then
+        echo "$file文件如下：" >> demo.txt
+        cat "$file" >> demo.txt
+        echo "" >> demo.txt
+    fi
+done
+
+govA.txt文件如下：
+wyx.gov.us 86400 IN A 192.168.9.9
+dns.gov.us 86400 IN A 192.168.100.100
+mail.qq.gov.us 86400 IN A 192.168.101.101
+mail.qwqw.gov.us 86400 IN A 192.168.102.102
+
+gov.c文件如下：
+#include<stdio.h>
+#include<sys/types.h>
+#include<string.h>
+#include<unistd.h>
+#include<netinet/in.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<stdint.h>
+#include "DNS.h"
+#define LINE     10
+#define DNS_MAX_LENGTH 1023
+
+unsigned int getHeader(char *q, dns_header *header);
+unsigned int getQuery(char *q, dns_query *query);
+int isequal(char *str1, char* str2);
+unsigned int rr2buf(char *o, dns_rr* rr);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int head2buf(char *o, dns_header *header);
+unsigned int add2buf(char *o, dns_rr* rr, dns_query* query);
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr);
+int main(){
+	int state=0;  
+	int sockup;
+	struct sockaddr_in localAddr;
+	struct sockaddr_in upAddr;
+	struct sockaddr_in downAddr;
+	unsigned int upAddrLen;
+	char upInBuffer[DNS_MAX_LENGTH];
+	char upOutBuffer[DNS_MAX_LENGTH];
+	unsigned short port=53;
+	int recvMsgSize;
+	int outMsgSize; 
+	char ipAddr[100];
+	
+	
+	
+	dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(recvQuery);
+	dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));initHead(recvHead);
+	dns_rr *recvrRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(recvrRecord);  
+	
+	dns_query *resQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(resQuery);
+	dns_header *resHead = (dns_header *)malloc(sizeof(dns_header));initHead(resHead);
+	dns_rr *resRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(resRecord); 
+	
+	dns_query *mxQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(mxQuery);
+	dns_header *mxHead = (dns_header *)malloc(sizeof(dns_header));initHead(mxHead);
+	dns_rr *mxRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(mxRecord);
+	
+	
+	if((sockup=socket(PF_INET,SOCK_DGRAM,0))<0)  printf("socket() failed\n");
+	
+	init_sockaddr_in("127.0.0.7", 53, &localAddr);
+	if((bind (sockup,(struct sockaddr*)&localAddr,sizeof(localAddr)))<0){
+		printf("bind() failed\n");
+	} 
+	while(1){
+	state=0;
+	upAddrLen=sizeof(upAddr);
+	
+	if((recvMsgSize=recvfrom(sockup,upInBuffer,DNS_MAX_LENGTH,0,(struct sockaddr*)&upAddr,&upAddrLen))<0){
+		printf("recvfrom() failed\n");
+	}
+	printf("Handling client %s\n",inet_ntoa(upAddr.sin_addr));
+	
+	
+	char *i = upInBuffer;
+	i += getHeader(i, recvHead);
+	i += getQuery(i, recvQuery); 	
+	
+	
+    
+	resHead->id =htons(recvHead->id);
+	resHead->tag =htons(0x8000);
+	resHead->queryNum =htons(recvHead->queryNum);
+	resHead->answerNum = htons(1); 
+	resHead->authorNum = 0;
+	resHead->addNum = 0;
+	resQuery = recvQuery;
+	resRecord->name=recvQuery->name;
+    resRecord->rclass=recvQuery->qclass;
+	resRecord->type=recvQuery->qtype;
+	resRecord->ttl = (uint32_t)86400;
+	resRecord->data_len = 4;
+	
+	 if(recvQuery->qtype==A_TYPE){
+	   freopen("govA.txt", "r", stdin);
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_ip[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_ip)){
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_ip);
+	    		
+	    		
+	    		resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_ip)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_ip);
+				resRecord->data_len=strlen(resRecord->rdata)+1;
+				resHead->answerNum = htons(1);
+				resHead->tag = htons(0x8180);
+	    		state=1;   
+	    		break;
+			}
+		}  
+	}
+	else if(recvQuery->qtype==CNAME_TYPE){
+	 freopen("govC.txt", "r", stdin);
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_addr[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_addr)){
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_addr: %s\n",file_addr);
+	    		
+	    		
+	    		resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_addr);
+				resRecord->data_len=strlen(resRecord->rdata)+1;
+				resHead->answerNum = htons(1);
+				resHead->tag = htons(0x8180);
+	    		state=1;   
+	    		break;
+			}
+		}  	
+	}
+	else if(recvQuery->qtype==MX_TYPE){
+		
+		freopen("govM.txt", "r", stdin);
+		printf("flag1\n"); 
+	   char file_name[255],file_ttl[255],file_class[255],file_type[255],file_addr[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_addr)){
+	    	
+	    	if(isequal(recvQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_addr: %s\n",file_addr);
+				
+
+				resRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(resRecord->name, file_name);
+				resRecord->ttl = (uint32_t)(atoi(file_ttl));
+				resRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(resRecord->rdata, file_addr);
+				resHead->answerNum = htons(1);
+				
+		        resRecord->data_len = strlen(resRecord->rdata)-strlen(recvQuery->name) + 4;
+				resHead->tag = htons(0x8180);
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		} 
+		if(state==1){
+		mxQuery->name = (char*)malloc((strlen(resRecord->rdata)+1)*sizeof(char));
+		strcpy(mxQuery->name, resRecord->rdata);
+		
+		mxQuery->qclass = recvQuery->qclass;
+		mxQuery->qtype = A_TYPE; 
+		freopen("govA.txt", "r", stdin);
+	    char file_ip[255];
+	    while(~scanf("%s%s%s%s%s", file_name, file_ttl, file_class,file_type,file_ip)){
+	    	if(isequal(mxQuery->name,file_name)){
+	    		printf("file_name: %s\n",file_name);
+	    		printf("file_name length: %d\n",strlen(file_name));
+	    		printf("file_ttl: %s\n",file_ttl);
+	    		printf("file_class； %s\n",file_class);
+	    		printf("file_type: %s\n",file_type);
+	    		printf("file_ip: %s\n",file_ip);
+				
+		    	mxRecord->name = (char*)malloc((strlen(file_name)+1)*sizeof(char));
+				strcpy(mxRecord->name, file_name);
+				mxRecord->ttl = (uint32_t)(atoi(file_ttl));
+				mxRecord->rdata = (char*)malloc((strlen(file_addr)+1)*sizeof(char));
+				strcpy(mxRecord->rdata, file_ip);
+				mxRecord->data_len=4;
+				mxRecord->type=A_TYPE; 
+	            mxRecord->rclass=recvQuery->qclass;
+                resHead->addNum = htons(1); 
+
+	    		
+	    		
+	    		state=1;   
+	    		break;
+			}
+		}
+	  }
+	 }
+	 	  
+	
+	char* o=upOutBuffer;
+	if(state==0){
+		resHead->tag =htons(0x8183);
+		resHead->answerNum = 0;
+	 	o = upOutBuffer; 
+		o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery);    
+	}else{
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+	 	o += rr2buf(o,resRecord);
+	 	if(recvQuery->qtype == MX_TYPE)
+	 	o+=add2buf(o, mxRecord, recvQuery);
+	}
+    
+    
+	 
+
+	
+	
+	outMsgSize = o - upOutBuffer + 1;
+	
+	if(sendto(sockup,upOutBuffer,outMsgSize,0,(struct sockaddr*)&upAddr,sizeof(upAddr))!=outMsgSize){
+		printf("sendto() problem!\n");
+	}
+  }
+	
+}	
+unsigned int head2buf(char *o, dns_header *head){
+	memcpy(o, head, sizeof(dns_header));
+	
+	return sizeof(dns_header);
+}
+
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr){
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr=inet_addr(ip);
+    memset(addr->sin_zero, 0, sizeof(addr->sin_zero));
+}
+
+unsigned int getHeader(char *q, dns_header *header){
+	
+	
+	
+	
+	
+		
+	
+	
+	
+	header->id = ntohs(*(uint16_t*) (q));
+	header->tag = ntohs(*(uint16_t*) (q+2));
+	header->queryNum = ntohs(*(uint16_t*) (q+4));
+	printf("queryName: %d\n", header->id);
+	header->answerNum = ntohs(*(uint16_t*) (q+6));
+	header->authorNum = ntohs(*(uint16_t*) (q+8));
+	header->addNum = ntohs(*(uint16_t*) (q+10));
+	
+	return sizeof(dns_header);
+}
+
+
+unsigned int getQuery(char *q, dns_query *query){
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	printf("d: %s\n", d);
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char*)malloc(i*sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+	
+	query->qtype = ntohs(*(uint16_t*) (q));
+	query->qclass = ntohs(*(uint16_t*) (q+2));
+	
+	
+	return i+4+1; 
+}
+
+unsigned int query2buf(char *o, dns_query *query){
+	char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(query->name[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(query->name[i] == '\0'){
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o++;
+	int len = o - ini; 
+	
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o+=sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o+=sizeof(short);
+
+
+
+
+
+	
+	return len+2*sizeof(short);
+}
+
+unsigned int rr2buf(char *o, dns_rr* rr) {
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+	
+
+
+
+
+
+
+
+
+	o+=2;
+	
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+	
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+	
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	
+	if(rr->type == MX_TYPE){
+		temp=htons(1);
+		memcpy(o, &temp, sizeof(short));
+		o+=2;
+	}
+	
+	if(rr->type == A_TYPE){
+		uint32_t  ipAddr = inet_addr(rr->rdata);
+		memcpy(o, &ipAddr,rr->data_len); 
+		
+		o+=rr->data_len; 
+		return 16;
+	}
+	else if(rr->type == CNAME_TYPE){
+		char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(rr->rdata[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(rr->rdata[i] == '\0'){
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+		return 12 + rr->data_len + 1;
+	}
+	else if(rr->type == MX_TYPE){ 
+		char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(rr->rdata[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				break;
+				
+		}
+		else if(rr->rdata[i] == '\0'){
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(rr->rdata[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o--;
+	
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+	return 16+i;
+	}
+	
+	
+}
+
+ 
+unsigned int add2buf(char *o, dns_rr* rr, dns_query* query) {
+	
+	
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49152+12+strlen(query->name)+2+4+14); 
+	memcpy(o, &temp, sizeof(short)); 
+
+
+
+
+
+
+
+
+	o+=2;
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+
+	
+	
+	uint32_t  ipAddr = inet_addr(rr->rdata);
+	memcpy(o, &ipAddr, rr->data_len); 
+	
+	o+=rr->data_len; 
+	return 16;
+
+
+}
+ int isequal(char *str1, char* str2)
+{
+    if (strlen(str1)!=strlen(str2))
+     return 0;
+     int i=0;
+    for (i = 0; str1[i]!='\0'; i++){
+        if (str1[i]!=str2[i])
+        return 0;
+     }
+   return 1;
+  }
+govC.txt文件如下：
+wyx.gov.us 86400 IN CNAME wyx.dns.shiyan
+dns.gov.us 86400 IN CNAME yzy.dns.shiyan
+govM.txt文件如下：
+qq.gov.us 86400 IN MX mail.qq.gov.us
+qwqw.gov.us 86400 IN MX mail.qwqw.gov.us
+localCacheA.txt文件如下：
+wyx.yzy.dns 86400 IN A 192.168.1.25
+qmul.shiyan.dns 86400 IN A 188.130.100.98
+mail.bupt.edu.cn 86400 IN A 185.229.250.34
+mail.qmul.ac.uk 86400 IN A 156.229.250.3
+
+localCacheC.txt文件如下：
+wyx.yzy.dns 86400 IN CNAME cname.shiyan.dns
+qmul.dns.shiyan 86400 IN CNAME cname.qmul.shiyan
+localCacheMX.txt文件如下：
+bupt.edu.cn 86400 IN MX mail.bupt.edu.cn
+qmul.ac.uk 86400 IN MX mail.qmul.ac.uk
+
+
+localServer.c文件如下：
+#include <stdio.h>
+#include <sys/types.h>
+#include <string.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdint.h>
+
+#include "DNS.h"
+#define LINE 10
+#define DNS_MAX_LENGTH 1023
+
+unsigned int getHeader(char *q, dns_header *header);
+unsigned int getQuery(char *q, dns_query *recvQuery);
+void init_DNS_RR(dns_query *recvQuery, dns_rr *resRecord, char *col);
+unsigned int head2buf(char *o, dns_header *head);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int add2buf(char *o, dns_rr *rr, dns_query *query);
+unsigned int rr2buf(char *o, dns_rr *rr);
+unsigned int compare(dns_query *query, char *col);
+unsigned int cmpDomainName(char *name, char *col);
+unsigned int cmpTypeClass(unsigned short type, char *col);
+unsigned int getRRs(char *q, dns_rr *rRecord);
+void init_sockaddr_in(char *ip, int port, struct sockaddr_in *addr);
+
+int main()
+{
+	
+	int serfd = 0;
+	serfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (serfd < 0)
+	{
+		perror("socket failed");
+		return -1;
+	}
+	printf("Socket Created!\n");
+	
+	int ret = 0;
+	struct sockaddr_in seraddr = {0};
+	seraddr.sin_family = AF_INET;
+	seraddr.sin_port = htons(53);
+	seraddr.sin_addr.s_addr = inet_addr("127.0.0.2");
+	ret = bind(serfd, (struct sockaddr *)&seraddr, sizeof(seraddr));
+	if (ret < 0)
+	{
+		perror("Bind failed");
+		close(serfd);
+		return -1;
+	}
+	printf("Bind Starting\n");
+	
+	int lis = 0;
+	lis = listen(serfd, LINE);
+	if (lis < 0)
+	{
+		perror("listen failed");
+		close(serfd);
+		return -1;
+	}
+	printf("Listen to the client\n");
+	
+	int confd = 0;
+	socklen_t addrlen;
+	struct sockaddr_in clientaddr = {0};
+	addrlen = sizeof(clientaddr);
+	confd = accept(serfd, (struct sockaddr *)&clientaddr, &addrlen);
+	if (confd < 0)
+	{
+		perror("accept failed");
+		close(serfd);
+		return -1;
+	}
+	printf("Connect with Client successfully!\n");
+	printf("IP=%s, PORT=%u\n", inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port));
+	
+
+	while (1)
+	{
+		unsigned char queryInfo[127];
+		unsigned char *convertQueryInfo;
+		
+		dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));
+		initQuery(recvQuery);
+		dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));
+		initHead(recvHead);
+		dns_rr *recvrRecord = (dns_rr *)malloc(sizeof(dns_rr));
+		initRR(recvrRecord);
+		
+		dns_query *resQuery = (dns_query *)malloc(sizeof(dns_query));
+		initQuery(resQuery);
+		dns_header *resHead = (dns_header *)malloc(sizeof(dns_header));
+		initHead(resHead);
+		dns_rr *resRecord = (dns_rr *)malloc(sizeof(dns_rr));
+		initRR(resRecord);
+		
+		dns_query *serverQuery = (dns_query *)malloc(sizeof(dns_query));
+		initQuery(serverQuery);
+		dns_header *serverHead = (dns_header *)malloc(sizeof(dns_header));
+		initHead(serverHead);
+		dns_rr *serverRecord = (dns_rr *)malloc(sizeof(dns_rr));
+		initRR(serverRecord);
+		
+		dns_query *mxQuery = (dns_query *)malloc(sizeof(dns_query));
+		initQuery(mxQuery);
+		dns_header *mxHead = (dns_header *)malloc(sizeof(dns_header));
+		initHead(mxHead);
+		dns_rr *mxRecord = (dns_rr *)malloc(sizeof(dns_rr));
+		initRR(mxRecord);
+
+		char bufOut[DNS_MAX_LENGTH];
+		memset(bufOut, 0, DNS_MAX_LENGTH);
+		char bufIn[DNS_MAX_LENGTH];
+		memset(bufIn, 0, DNS_MAX_LENGTH);
+		char closeFlag[5];
+		char flag[] = "exit";
+
+		unsigned short qType, qClass;
+		unsigned short offset = 0;
+		unsigned short *offsetptr;
+		int rev = 0;
+		int sed = 0;
+		int checkinit = 0;
+
+		while (1)
+		{
+			checkinit = 0;
+			memset(bufOut, 0, DNS_MAX_LENGTH);
+			memset(bufIn, 0, DNS_MAX_LENGTH);
+			char *o = bufOut + 2; 
+			char *i = bufIn + 2;  
+			offset = 0;
+			rev = 0;
+
+			rev = recv(confd, bufIn, sizeof(bufIn), 0);
+			
+			i += getHeader(i, recvHead);
+			i += getQuery(i, recvQuery);
+			if (rev > 0)
+			{
+				printf("Received the query request from client!\n");
+
+				
+				
+				
+				
+				
+			}
+			
+			if (recvQuery->qtype == 0)
+			{
+				close(confd);
+				break;
+			}
+
+			resHead->id = htons(recvHead->id);
+			resHead->tag = htons(0x8180);
+			resHead->queryNum = htons(recvHead->queryNum);
+			resHead->answerNum = htons(1); 
+			resHead->authorNum = 0;
+			resHead->addNum = 0;
+			resQuery = recvQuery;
+			char *filePath;
+			
+			
+			
+			if (resQuery->qtype == A_TYPE)
+			{
+				filePath = "localCacheA.txt";
+				FILE *fp = fopen(filePath, "r"); 
+				char col[DNSMAXLEN];
+				memset(col, 0, DNSMAXLEN);
+				while (fgets(col, DNSMAXLEN - 1, fp) != NULL)
+				{ 
+					
+					if (compare(recvQuery, col))
+					{
+						
+						init_DNS_RR(recvQuery, resRecord, col);
+						resHead->answerNum = htons(1); 
+						checkinit = 1;				   
+						break;
+					}
+				}
+			}
+			else if (resQuery->qtype == CNAME_TYPE)
+			{
+				filePath = "localCacheC.txt";
+				FILE *fp = fopen(filePath, "r"); 
+				char col[DNSMAXLEN];
+				memset(col, 0, DNSMAXLEN);
+				while (fgets(col, DNSMAXLEN - 1, fp) != NULL)
+				{ 
+					
+					if (compare(recvQuery, col))
+					{
+						
+						init_DNS_RR(recvQuery, resRecord, col);
+						resHead->answerNum = htons(1); 
+						checkinit = 1;				   
+						break;
+					}
+				}
+			}
+			else if (resQuery->qtype == MX_TYPE)
+			{
+				
+				filePath = "localCacheMX.txt";
+				FILE *fp1 = fopen(filePath, "r"); 
+				char col1[DNSMAXLEN];
+				memset(col1, 0, DNSMAXLEN);
+				while (fgets(col1, DNSMAXLEN - 1, fp1) != NULL)
+				{ 
+					
+					if (compare(recvQuery, col1))
+					{
+						
+						init_DNS_RR(recvQuery, resRecord, col1);
+						resHead->answerNum = htons(1); 
+						checkinit = 1;				   
+						break;
+					}
+				}
+				if (checkinit == 1)
+				{
+					mxQuery->name = (char *)malloc((strlen(resRecord->rdata) + 1) * sizeof(char));
+					strcpy(mxQuery->name, resRecord->rdata);
+					
+					mxQuery->qclass = recvQuery->qclass;
+					mxQuery->qtype = A_TYPE; 
+
+					
+					filePath = "localCacheA.txt";
+					FILE *fp2 = fopen(filePath, "r"); 
+					char col2[DNSMAXLEN];
+					memset(col2, 0, DNSMAXLEN);
+					while (fgets(col2, DNSMAXLEN - 1, fp2) != NULL)
+					{ 
+						
+						if (compare(mxQuery, col2))
+						{
+							
+							init_DNS_RR(mxQuery, mxRecord, col2);
+							resHead->addNum = htons(1); 
+							checkinit = 1;				
+							break;
+						}
+					}
+				}
+			}
+
+			if (checkinit != 1)
+			{
+				int sockudp;
+				struct sockaddr_in toAddr;	 
+				struct sockaddr_in fromAddr; 
+				unsigned short toPort = 53;
+				unsigned int fromSize;
+
+				char bufFromRoot[DNS_MAX_LENGTH];
+				memset(bufFromRoot, 0, DNS_MAX_LENGTH);
+
+				char *askBuf;
+				askBuf = bufIn + 2;
+				char recvBuffer[DNS_MAX_LENGTH];
+				
+
+				
+				int inLength; 
+
+				if ((sockudp = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+					printf("socket() failed\n");
+				init_sockaddr_in("127.0.0.3", 53, &toAddr);
+				printf("Query to Root\n");
+				if (sendto(sockudp, askBuf, DNS_MAX_LENGTH, 0, (struct sockaddr *)&toAddr, sizeof(toAddr)) != DNS_MAX_LENGTH)
+				{
+					printf("send length not right.\n");
+				}
+				fromSize = sizeof(fromAddr);
+				inLength = recvfrom(sockudp, bufFromRoot, DNS_MAX_LENGTH, 0, (struct sockaddr *)&fromAddr, &fromSize);
+				
+				
+				
+				char *p = bufFromRoot; 
+				p += getHeader(p, serverHead);
+				
+				p += getQuery(p, serverQuery);
+				serverRecord->name = serverQuery->name;
+				serverRecord->type = A_TYPE;
+				serverRecord->rclass = serverQuery->qclass;
+				
+				
+				
+				
+				
+				p += 6; 
+				
+				
+				
+				
+				p += getRRs(p, serverRecord);
+				
+				while (1)
+				{
+					if (serverHead->tag == 32768)
+					{								
+						struct sockaddr_in askAddr; 
+						unsigned int askSize;		
+						int backlength;				
+						printf("Send Query Request to %s\n", serverRecord->rdata);
+						init_sockaddr_in(serverRecord->rdata, 53, &askAddr);
+
+						if (sendto(sockudp, askBuf, DNS_MAX_LENGTH, 0, (struct sockaddr *)&askAddr, sizeof(askAddr)) != DNS_MAX_LENGTH)
+						{
+							printf("send length not right.\n");
+						}
+						askSize = sizeof(askAddr);
+						backlength = recvfrom(sockudp, bufFromRoot, DNS_MAX_LENGTH, 0, (struct sockaddr *)&askAddr, &askSize);
+						
+
+						char *p1 = bufFromRoot; 
+						p1 += getHeader(p1, serverHead);
+						
+						p1 += getQuery(p1, serverQuery);
+						serverRecord->name = serverQuery->name;
+						if (serverHead->tag == 32768)
+						{
+							serverRecord->type = A_TYPE;
+						}
+						else
+							serverRecord->type = serverQuery->qtype;
+						serverRecord->rclass = serverQuery->qclass;
+						
+						
+						
+						
+						
+						p1 += 6; 
+						
+						
+						
+						
+						if (serverHead->tag != 33155)
+						{
+							p1 += getRRs(p1, serverRecord);
+							if (serverQuery->qtype == MX_TYPE)
+							{
+								mxRecord->name = (char *)malloc((strlen(serverRecord->rdata) + 1) * sizeof(char));
+								strcpy(mxRecord->name, serverRecord->rdata);
+								mxRecord->type = A_TYPE;
+								mxRecord->rclass = 1;
+								p1 += getRRs(p1, mxRecord);
+							}
+						}
+
+						
+					}
+					else if (serverHead->tag == 33155)
+					{ 
+						printf("Not found!\n");
+						serverRecord->type = serverQuery->qtype;
+						serverHead->id = htons(serverHead->id);
+						serverHead->tag = htons(serverHead->tag);
+						serverHead->queryNum = htons(serverHead->queryNum);
+						serverHead->answerNum = htons(serverHead->answerNum);
+						serverHead->authorNum = 0;
+						serverHead->addNum = 0;
+						char *p2 = bufOut + 2;
+						p2 += head2buf(p2, serverHead);
+						p2 += query2buf(p2, serverQuery);
+						
+						uint16_t offset = p2 - bufOut - 2;
+						uint16_t temp = htons(offset);
+						memcpy(bufOut, &temp, sizeof(short));
+						sed = send(confd, bufOut, offset + 2, 0);
+						if (sed < 0)
+						{
+							perror("send failed");
+							close(serfd);
+							return -1;
+						}
+						printf("Send to Client Success\n");
+						break;
+					}
+					else if (serverHead->tag == 33152)
+					{ 
+						printf("Found successful!");
+						serverRecord->type = serverQuery->qtype;
+						serverHead->id = htons(serverHead->id);
+						serverHead->tag = htons(serverHead->tag);
+						serverHead->queryNum = htons(serverHead->queryNum);
+						serverHead->answerNum = htons(serverHead->answerNum);
+						serverHead->authorNum = 0;
+						serverHead->addNum = 0;
+						if (serverQuery->qtype == MX_TYPE)
+						{
+							serverHead->addNum = htons(1);
+						}
+						char *p2 = bufOut + 2;
+						p2 += head2buf(p2, serverHead);
+						p2 += query2buf(p2, serverQuery);
+						p2 += rr2buf(p2, serverRecord);
+						if (serverQuery->qtype == MX_TYPE)
+							p2 += add2buf(p2, mxRecord, serverQuery);
+						uint16_t offset = p2 - bufOut - 2;
+						uint16_t temp = htons(offset);
+						memcpy(bufOut, &temp, sizeof(short));
+						sed = send(confd, bufOut, offset + 2, 0);
+						if (sed < 0)
+						{
+							perror("send failed");
+							close(serfd);
+							return -1;
+						}
+						printf("Send to Client Success\n");
+						break;
+					}
+				}
+
+				
+				close(sockudp);
+				
+			}
+			else
+			{
+				printf("Find in local server cache.\n");
+				o = bufOut + 2;
+				o += head2buf(o, resHead);
+				o += query2buf(o, resQuery);
+				o += rr2buf(o, resRecord);
+
+				if (recvQuery->qtype == MX_TYPE)
+					o += add2buf(o, mxRecord, recvQuery);
+
+				offset = o - bufOut - 2;
+				offsetptr = &offset;
+				uint16_t temp = htons(offset);
+				memcpy(bufOut, &temp, sizeof(short)); 
+
+				sed = send(confd, bufOut, offset + 2, 0);
+				if (sed < 0)
+				{
+					perror("send failed");
+					close(serfd);
+					return -1;
+				}
+				printf("Send Success\n");
+			}
+		}
+
+		
+		
+		
+		
+	}
+
+	close(confd);
+	close(serfd);
+
+	return 0;
+}
+
+unsigned int rr2buf(char *o, dns_rr *rr)
+{
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp = htons(49164); 
+	memcpy(o, &temp, sizeof(short));
+
+	
+	
+	
+	
+	
+	
+	
+	
+	o += 2;
+	
+	temp = htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o += 2;
+	
+	temp = htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o += 2;
+	
+	temp32 = htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2 * sizeof(short)));
+	o += 4;
+	
+	temp = htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o += 2;
+	
+	
+	if (rr->type == MX_TYPE)
+	{
+		temp = htons(1);
+		memcpy(o, &temp, sizeof(short));
+		o += 2;
+	}
+
+	if (rr->type == A_TYPE)
+	{
+		uint32_t ipAddr = inet_addr(rr->rdata);
+		memcpy(o, &ipAddr, rr->data_len); 
+		
+		o += rr->data_len; 
+		return 16;
+	}
+	else if (rr->type == CNAME_TYPE)
+	{
+		char *ini = o; 
+		uint8_t count = 0;
+		int i = 0;
+		int j = 1; 
+		int tempts = 0;
+		o++; 
+		while (1)
+		{
+			
+			if (rr->rdata[i] == '.')
+			{
+				memcpy(o - count - 1, &count, sizeof(char));
+				
+				count = 0;
+				o++;
+				i++;
+				tempts = 1;
+			}
+			else if (rr->rdata[i] == '\0')
+			{
+				memcpy(o, &(rr->rdata[i]), sizeof(char));
+				memcpy(o - count - 1, &count, sizeof(char));
+				count = 0;
+				break;
+			}
+			else
+			{
+				memcpy(o, &(rr->rdata[i]), sizeof(char));
+				o++;
+				i++;
+				count++;
+			}
+		}
+		return 12 + rr->data_len + 1;
+	}
+	else if (rr->type == MX_TYPE)
+	{				   
+		char *ini = o; 
+		uint8_t count = 0;
+		int i = 0;
+		int j = 1; 
+		int tempts = 0;
+		o++; 
+		while (1)
+		{
+			
+			if (rr->rdata[i] == '.')
+			{
+				memcpy(o - count - 1, &count, sizeof(char));
+				
+				count = 0;
+				o++;
+				i++;
+				tempts = 1;
+				break;
+			}
+			else if (rr->rdata[i] == '\0')
+			{
+				memcpy(o, &(rr->rdata[i]), sizeof(char));
+				memcpy(o - count - 1, &count, sizeof(char));
+				count = 0;
+				break;
+			}
+			else
+			{
+				memcpy(o, &(rr->rdata[i]), sizeof(char));
+				o++;
+				i++;
+				count++;
+			}
+		}
+		o--;
+		
+		temp = htons(49164); 
+		memcpy(o, &temp, sizeof(short));
+		return 16 + i;
+	}
+}
+unsigned int head2buf(char *o, dns_header *head)
+{
+	memcpy(o, head, sizeof(dns_header));
+	return sizeof(dns_header);
+}
+
+unsigned int query2buf(char *o, dns_query *query)
+{
+	char *ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while (1)
+	{
+		
+		if (query->name[i] == '.')
+		{
+			memcpy(o - count - 1, &count, sizeof(char));
+			
+			count = 0;
+			o++;
+			i++;
+			tempts = 1;
+		}
+		else if (query->name[i] == '\0')
+		{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o - count - 1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else
+		{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++;
+		}
+	}
+	o++;
+	int len = o - ini; 
+	
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o += sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o += sizeof(short);
+	
+	
+	
+	
+	
+	
+	return len + 2 * sizeof(short);
+}
+unsigned int getHeader(char *q, dns_header *header)
+{
+	
+	
+	
+	
+	
+
+	
+	
+
+	header->id = ntohs(*(uint16_t *)(q));
+	header->tag = ntohs(*(uint16_t *)(q + 2));
+	header->queryNum = ntohs(*(uint16_t *)(q + 4));
+	
+	header->answerNum = ntohs(*(uint16_t *)(q + 6));
+	header->authorNum = ntohs(*(uint16_t *)(q + 8));
+	header->addNum = ntohs(*(uint16_t *)(q + 10));
+
+	return sizeof(dns_header);
+}
+
+unsigned int getQuery(char *q, dns_query *query)
+{
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0;
+
+	
+	
+	while (1)
+	{
+		if (*q != '\0')
+		{
+			count = *(uint8_t *)(q);
+			
+			q++;
+			while (count)
+			{
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--;
+				q++;
+				i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else
+		{
+			domainName[i - 1] = '\0'; 
+			q++;
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char *)malloc(i * sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+
+	query->qtype = ntohs(*(uint16_t *)(q));
+	query->qclass = ntohs(*(uint16_t *)(q + 2));
+	
+	
+	return i + 4 + 1; 
+}
+
+unsigned int compare(dns_query *query, char *col)
+{
+	unsigned int offset = 0;
+	
+	if (offset = cmpDomainName(query->name, col))
+	{
+		
+		if (cmpTypeClass(query->qtype, col + offset))
+			return 1;
+	}
+	return 0;
+}
+unsigned int cmpTypeClass(unsigned short type, char *col)
+{
+	return 1;
+}
+unsigned int cmpDomainName(char *name, char *col)
+{
+	int len = strlen(name), i = 0;
+	
+	while (i < len)
+	{
+		
+		
+		if (name[i] != col[i])
+		{
+			return 0;
+		}
+		i++;
+	}
+	if (col[i] != ' ')
+		return 0;
+	else
+		return len + 1;
+}
+
+int blocklen(char *cur)
+{
+	int i = 0;
+	while (1)
+	{
+		if (cur[i] == ' ' || cur[i] == '\n' || cur[i] == '\0')
+			break;
+		else
+			i++;
+	}
+	return i + 1;
+}
+
+void init_DNS_RR(dns_query *recvQuery, dns_rr *resRecord, char *col)
+{
+	char *cur = col; 
+	unsigned int len = 0;
+	
+
+	
+	resRecord->name = recvQuery->name;
+	resRecord->rclass = recvQuery->qclass;
+	resRecord->type = recvQuery->qtype;
+
+	len = blocklen(cur);
+	cur += len; 
+	
+
+	len = blocklen(cur); 
+	
+
+	char strttl[len];
+	memcpy(strttl, cur, len - 1);
+	strttl[len - 1] = '\0';
+	cur += len;
+	int TTL = atoi(strttl); 
+	resRecord->ttl = (uint32_t)TTL;
+	
+	len = blocklen(cur);
+	cur += len; 
+	
+	len = blocklen(cur);
+	cur += len; 
+	
+	len = blocklen(cur);
+	
+	char strData[len];
+	memcpy(strData, cur, len - 1);
+	strData[len - 2] = '\0';
+	char *strPointer = strData;
+	resRecord->rdata = (char *)malloc((len - 1) * sizeof(char));
+	memcpy(resRecord->rdata, strPointer, len - 1);
+	
+	
+
+	if (resRecord->type == A_TYPE)
+	{
+		resRecord->data_len = 4; 
+	}
+	else if (resRecord->type == CNAME_TYPE)
+	{
+		resRecord->data_len = strlen(resRecord->rdata) + 1;
+	}
+	else if (resRecord->type == MX_TYPE)
+	{
+		
+		resRecord->data_len = strlen(resRecord->rdata) - strlen(recvQuery->name) + 4;
+	}
+
+	
+}
+void init_sockaddr_in(char *ip, int port, struct sockaddr_in *addr)
+{
+	addr->sin_family = AF_INET;
+	addr->sin_port = htons(port);
+	addr->sin_addr.s_addr = inet_addr(ip);
+	memset(addr->sin_zero, 0, sizeof(addr->sin_zero));
+}
+
+unsigned int getRRs(char *q, dns_rr *rRecord)
+{
+	uint32_t ipAddr;
+	rRecord->ttl = ntohl(*(uint32_t *)(q)); 
+	char str[INET_ADDRSTRLEN];
+	struct in_addr addr;
+	
+	q += sizeof(rRecord->ttl);
+	rRecord->data_len = ntohs(*(uint16_t *)(q));
+	
+	q += sizeof(rRecord->data_len);
+	
+	
+	if (rRecord->type == MX_TYPE)
+	{
+		q += 2; 
+	}
+
+	if (rRecord->type == A_TYPE)
+	{
+		ipAddr = *(uint32_t *)(q);
+		
+		memcpy(&addr, &ipAddr, 4);
+		char *ptr = inet_ntop(AF_INET, &addr, str, sizeof(str)); 
+		
+		rRecord->rdata = (char *)malloc((strlen(ptr) + 1) * sizeof(char));
+		strcpy(rRecord->rdata, ptr);
+		return 4 + 2 + rRecord->data_len;
+	}
+	else if (rRecord->type == CNAME_TYPE)
+	{
+		char domainName[100];
+		memset(domainName, 0, 100);
+		char *d = domainName;
+		
+		uint8_t count = 0;
+		int i = 0;
+		
+		
+		while (1)
+		{
+			if (*q != '\0')
+			{
+				count = *(uint8_t *)(q);
+				
+				q++;
+				while (count)
+				{
+					
+					
+					memcpy(&(domainName[i]), q, sizeof(char));
+					
+					count--;
+					q++;
+					i++;
+				}
+				domainName[i] = '.'; 
+				i++;
+			}
+			else
+			{
+				domainName[i - 1] = '\0'; 
+				q++;
+				break;
+			}
+		}
+		
+		
+		
+		rRecord->rdata = (char *)malloc(i * sizeof(char));
+		memcpy(rRecord->rdata, domainName, i); 
+		
+		
+		return 4 + 2 + rRecord->data_len + 1;
+	}
+	else if (rRecord->type == MX_TYPE)
+	{
+		int firstlen = rRecord->data_len - 5;
+		char domainName[100];
+		memset(domainName, 0, 100);
+		char *d = domainName;
+		
+		uint8_t count = 0;
+		int i = 0;
+		
+		
+		while (1)
+		{
+			if (*q != '\0')
+			{
+				count = *(uint8_t *)(q);
+				
+				q++;
+				while (count)
+				{
+					
+					
+					memcpy(&(domainName[i]), q, sizeof(char));
+					
+					count--;
+					q++;
+					i++;
+				}
+				domainName[i] = '.'; 
+				i++;
+				domainName[i] = '\0';
+				i++;
+				break;
+			}
+		}
+		
+		
+		
+		strcpy(domainName, strcat(domainName, rRecord->name)); 
+		
+		int totalen = strlen(rRecord->name) + i; 
+		rRecord->rdata = (char *)malloc(totalen * sizeof(char));
+		memcpy(rRecord->rdata, domainName, totalen);
+		
+		
+		return 12 + rRecord->data_len;
+	}
+}
+
+unsigned int add2buf(char *o, dns_rr *rr, dns_query *query)
+{
+	
+	
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp = htons(49152 + 12 + strlen(query->name) + 2 + 4 + 14); 
+	memcpy(o, &temp, sizeof(short));
+	
+	
+	
+	
+	
+	
+	
+	
+	o += 2;
+	temp = htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o += 2;
+
+	temp = htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o += 2;
+
+	temp32 = htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2 * sizeof(short)));
+	o += 4;
+
+	temp = htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o += 2;
+
+	uint32_t ipAddr = inet_addr(rr->rdata);
+	memcpy(o, &ipAddr, rr->data_len); 
+	
+	o += rr->data_len; 
+	return 16;
+}
+
+Makefile文件如下：
+CC = gcc
+CFLAGS = -Wall
+
+SRCS = client.c cnus.c comorg.c edu.c gov.c localServer.c root.c
+EXECS = $(SRCS:.c=)
+
+# 默认的目标，编译生成所有可执行程序
+all: $(EXECS)
+
+# 生成每个可执行程序
+%: %.c
+	$(CC) $(CFLAGS) $< -o $@
+
+# 清除生成的可执行程序
+clean:
+	rm -f $(EXECS)
+
+root.c文件如下：
+#include<stdio.h>
+#include<sys/types.h>
+#include<string.h>
+#include<unistd.h>
+#include<netinet/in.h>
+#include<sys/socket.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<stdint.h>
+#include "DNS.h"
+#define LINE     10
+#define DNS_MAX_LENGTH 1023
+
+int isequal(char *str1, char* str2);
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr);
+unsigned int getHeader(char *q, dns_header *header);
+unsigned int getQuery(char *q, dns_query *query);
+void splitOneDomainName(char *domainName, char *splitName);
+unsigned int head2buf(char *o, dns_header *header);
+unsigned int query2buf(char *o, dns_query *query);
+unsigned int getRRs(char *q, dns_rr *rRecord);
+unsigned int rr2buf(char *o, dns_rr* rr); 
+
+int main(){
+	int sockup;
+	struct sockaddr_in localAddr;
+	struct sockaddr_in upAddr;
+	unsigned int upAddrLen;
+	char upInBuffer[DNS_MAX_LENGTH];
+	char upOutBuffer[DNS_MAX_LENGTH];
+	char splitName[100];
+	char ipAddr[100];
+	dns_query *recvQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(recvQuery);
+	dns_header *recvHead = (dns_header *)malloc(sizeof(dns_header));initHead(recvHead);
+	
+	dns_query *resQuery = (dns_query *)malloc(sizeof(dns_query));initQuery(resQuery);
+	dns_header *resHead = (dns_header *)malloc(sizeof(dns_header));initHead(resHead);
+	dns_rr *resRecord = (dns_rr *)malloc(sizeof(dns_rr));initRR(resRecord);
+	unsigned short port=53;
+	int recvMsgSize;
+	int outMsgSize; 
+	char *i;
+	char *o;
+	
+	if((sockup=socket(PF_INET,SOCK_DGRAM,0))<0)  printf("socket() failed\n");
+	
+	init_sockaddr_in("127.0.0.3", 53, &localAddr);
+	if((bind (sockup,(struct sockaddr*)&localAddr,sizeof(localAddr)))<0){
+		printf("bind() failed\n");
+	} 
+	while(1){
+	upAddrLen=sizeof(upAddr);
+	
+	if((recvMsgSize=recvfrom(sockup,upInBuffer,DNS_MAX_LENGTH,0,(struct sockaddr*)&upAddr,&upAddrLen))<0){
+		printf("recvfrom() failed\n");
+	}
+	printf("Handling client %s\n",inet_ntoa(upAddr.sin_addr));
+	
+	
+	
+	i = upInBuffer;
+	i += getHeader(i, recvHead);
+	i += getQuery(i, recvQuery); 	
+	printf("The domain name is: %s\n", recvQuery->name);
+	
+	splitOneDomainName(recvQuery->name, splitName);
+	
+	
+	resHead->id =htons(recvHead->id);
+	resHead->tag =htons(0x8000);
+	resHead->queryNum =htons(recvHead->queryNum);
+	resHead->answerNum = htons(1); 
+	resHead->authorNum = 0;
+	resHead->addNum = 0;
+	resQuery = recvQuery;
+	resRecord->name=recvQuery->name;
+    resRecord->rclass=recvQuery->qclass;
+	resRecord->type=A_TYPE;
+	resRecord->ttl = (uint32_t)86400;
+	resRecord->data_len = 4;
+	
+	
+    int tf=isequal(splitName,"com");
+    
+    tf=isequal(splitName,"org");
+    
+	if(isequal(splitName,"com")||isequal(splitName,"org")){
+	    
+	    
+	    strcpy(ipAddr, "127.0.0.4");
+	   
+	    char *p = ipAddr;
+	    int len = strlen(ipAddr)+1;
+	    resRecord->rdata=(char*)malloc(len*sizeof(char));
+	    
+	    memcpy(resRecord->rdata,p,len);
+	    
+	   
+	    
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+		o += rr2buf(o,resRecord);
+	    
+	    
+	}
+	else if(isequal(splitName,"cn")||isequal(splitName,"us")){
+		 
+		strcpy(ipAddr, "127.0.0.5");
+		char *p = ipAddr;
+	    int len = strlen(ipAddr)+1;
+	    resRecord->rdata=(char*)malloc(len*sizeof(char));
+	    
+	    memcpy(resRecord->rdata,p,len);
+	    
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+		o += rr2buf(o,resRecord);
+	 	
+	 	
+	 	
+	 	
+	 	
+	 	
+	 	
+	} 
+	else{
+		resHead->answerNum = 0;
+		resHead->tag =htons(0x8183);
+		o = upOutBuffer; 
+	 	o += head2buf(o, resHead);
+	 	o += query2buf(o,resQuery); 
+		
+		
+	} 
+	 
+	
+
+	
+	
+	
+	
+	
+	outMsgSize=o - upOutBuffer +1;
+	
+	if(sendto(sockup,upOutBuffer,outMsgSize,0,(struct sockaddr*)&upAddr,sizeof(upAddr))!=outMsgSize){
+		printf("sendto() problem!\n");
+	}
+	
+	}	
+}
+ int isequal(char *str1, char* str2)
+{
+    if (strlen(str1)!=strlen(str2))
+     return 0;
+     int i=0;
+    for (i = 0; str1[i]!='\0'; i++){
+        if (str1[i]!=str2[i])
+        return 0;
+     }
+   return 1;
+  }
+
+void init_sockaddr_in(char* ip, int port, struct sockaddr_in* addr){
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr=inet_addr(ip);
+    memset(addr->sin_zero, 0, sizeof(addr->sin_zero));
+}
+
+unsigned int getHeader(char *q, dns_header *header){
+	
+	
+	
+	
+	
+		
+	
+	
+	
+	header->id = ntohs(*(uint16_t*) (q));
+	header->tag = ntohs(*(uint16_t*) (q+2));
+	header->queryNum = ntohs(*(uint16_t*) (q+4));
+	
+	header->answerNum = ntohs(*(uint16_t*) (q+6));
+	header->authorNum = ntohs(*(uint16_t*) (q+8));
+	header->addNum = ntohs(*(uint16_t*) (q+10));
+	
+	return sizeof(dns_header);
+}
+
+unsigned int getQuery(char *q, dns_query *query){
+	char domainName[100];
+	memset(domainName, 0, 100);
+	char *d = domainName;
+	
+	uint8_t count = 0;
+	int i = 0; 
+	
+	
+	while(1){
+		if(*q!='\0'){
+			count = *(uint8_t*)(q);
+			
+			q++;
+			while(count){
+				
+				
+				memcpy(&(domainName[i]), q, sizeof(char));
+				
+				count--; q++; i++;
+			}
+			domainName[i] = '.'; 
+			i++;
+		}
+		else{
+			domainName[i-1] = '\0'; 
+			q++; 
+			break;
+		}
+	}
+	
+	
+	
+	query->name = (char*)malloc(i*sizeof(char));
+	memcpy(query->name, domainName, i); 
+	
+	
+	query->qtype = ntohs(*(uint16_t*) (q));
+	query->qclass = ntohs(*(uint16_t*) (q+2));
+	
+	
+	return i+4+1; 
+}
+
+void splitOneDomainName(char *domainName, char *splitName){
+	int i = strlen(domainName)-1; 
+	
+	int j = 0;
+	int k = 0;
+	char invertName[100];
+	char splitOneName[100];
+	memset(invertName, 0, 100);
+	memset(splitOneName, 0, 100);
+	while(1){
+		if(domainName[i]!='.'){
+			
+			invertName[j] = domainName[i];
+			
+			i--;j++; 
+		}else break;
+	}
+	invertName[j] = '\0';
+	
+	i = strlen(invertName)-1;
+	while(1){
+		if(k < strlen(invertName)){
+			
+			splitName[k] = invertName[i];
+			i--; k++;
+		}else break;
+		
+	}
+	splitName[k] = '\0';
+	
+	
+}
+
+unsigned int head2buf(char *o, dns_header *head){
+	memcpy(o, head, sizeof(dns_header));
+
+	return sizeof(dns_header);
+}
+
+unsigned int query2buf(char *o, dns_query *query){
+	char* ini = o; 
+	uint8_t count = 0;
+	int i = 0;
+	int j = 1; 
+	int tempts = 0;
+	o++; 
+	while(1){
+		
+		if(query->name[i] == '.'){
+				memcpy(o-count-1, &count, sizeof(char));
+				
+				count = 0;
+				o++; i++;
+				tempts = 1;
+				
+		}
+		else if(query->name[i] == '\0'){
+			memcpy(o, &(query->name[i]), sizeof(char));
+			memcpy(o-count-1, &count, sizeof(char));
+			count = 0;
+			break;
+		}
+		else{
+			memcpy(o, &(query->name[i]), sizeof(char));
+			o++;
+			i++;
+			count++; 
+		}
+	}
+	o++;
+	int len = o - ini; 
+	
+	uint16_t temp = htons(query->qtype);
+	memcpy(o, &temp, sizeof(short));
+	temp = htons(query->qclass);
+	o+=sizeof(short);
+	memcpy(o, &temp, sizeof(short));
+	o+=sizeof(short);
+
+
+
+
+
+	
+	return len+2*sizeof(short);
+}
+
+unsigned int rr2buf(char *o, dns_rr* rr) {
+	int i = 0;
+	uint16_t temp;
+	uint32_t temp32;
+	temp =  htons(49164); 
+	memcpy(o, &temp, sizeof(short)); 
+
+
+
+
+
+
+
+
+	o+=2;
+	
+	temp=htons(rr->type);
+	memcpy(o, &temp, sizeof(short));
+	
+	o+=2;
+	
+	temp=htons(rr->rclass);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	temp32=htonl(rr->ttl); 
+	
+	memcpy(o, &temp32, (2*sizeof(short)));
+	o+=4;
+	
+	temp=htons(rr->data_len);
+	memcpy(o, &temp, sizeof(short));
+	o+=2;
+	
+	uint32_t  ipAddr = inet_addr(rr->rdata);
+	memcpy(o, &ipAddr,rr->data_len); 
+	
+	o+=rr->data_len; 
+	return 11+strlen(rr->name)+(rr->data_len);
+}
+
